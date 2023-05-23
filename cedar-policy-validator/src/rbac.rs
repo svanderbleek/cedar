@@ -403,7 +403,12 @@ impl Validator {
                 EntityReference::EUID(euid),
             )) => {
                 // <var> in <literal euid>
-                Box::new(self.schema.get_entities_in(var, euid.as_ref().clone()))
+                Box::new(
+                    self.schema
+                        .get_entities_in(var, euid.as_ref().clone())
+                        .unwrap_or_default()
+                        .into_iter(),
+                )
             }
             HeadConstraint::PrincipalOrResource(PrincipalOrResourceConstraint::Eq(
                 EntityReference::Slot,
@@ -415,7 +420,9 @@ impl Validator {
                 // <var> in [<literal euid>...]
                 Box::new(
                     self.schema
-                        .get_entities_in_set(var, euids.iter().map(Arc::as_ref).cloned()),
+                        .get_entities_in_set(var, euids.iter().map(Arc::as_ref).cloned())
+                        .unwrap_or_default()
+                        .into_iter(),
                 )
             }
         }
@@ -1643,5 +1650,60 @@ mod test {
                 TypeErrorKind::ImpossiblePolicy
             )]
         );
+    }
+}
+
+#[cfg(test)]
+mod partial_schema {
+    use cedar_policy_core::{
+        ast::{StaticPolicy, Template},
+        parser::parse_policy,
+    };
+
+    use crate::{NamespaceDefinition, Validator};
+
+    fn assert_validates_with_empty_schema(policy: StaticPolicy) {
+        let schema = serde_json::from_str::<NamespaceDefinition>(
+            r#"
+        {
+            "entityTypes": { },
+            "actions": {}
+        }
+        "#,
+        )
+        .unwrap()
+        .try_into()
+        .unwrap();
+
+        let (template, _) = Template::link_static_policy(policy);
+        let validate = Validator::partial_schema_validator(schema);
+        let errs = validate
+            .validate_policy(&template, crate::ValidationMode::Permissive)
+            .collect::<Vec<_>>();
+        assert_eq!(errs, vec![], "Did not expect any validation errors.");
+    }
+
+    #[test]
+    fn undeclared_entity_type_partial_schema() {
+        let policy = parse_policy(
+            Some("0".to_string()),
+            r#"permit(principal == User::"alice", action, resource);"#,
+        )
+        .unwrap();
+        assert_validates_with_empty_schema(policy);
+
+        let policy = parse_policy(
+            Some("0".to_string()),
+            r#"permit(principal, action == Action::"view", resource);"#,
+        )
+        .unwrap();
+        assert_validates_with_empty_schema(policy);
+
+        let policy = parse_policy(
+            Some("0".to_string()),
+            r#"permit(principal, action, resource == Photo::"party.jpg");"#,
+        )
+        .unwrap();
+        assert_validates_with_empty_schema(policy);
     }
 }

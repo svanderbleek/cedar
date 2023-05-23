@@ -58,12 +58,25 @@ pub enum ValidationMode {
 #[derive(Debug)]
 pub struct Validator {
     schema: ValidatorSchema,
+    partial_schema: bool,
 }
 
 impl Validator {
     /// Construct a new Validator from a schema file.
     pub fn new(schema: ValidatorSchema) -> Validator {
-        Self { schema }
+        Self {
+            schema,
+            partial_schema: false,
+        }
+    }
+
+    /// Construct a new Validator which will perform unsound validation given a
+    /// possibly incomplete schema file.
+    pub fn partial_schema_validator(schema: ValidatorSchema) -> Validator {
+        Self {
+            schema,
+            partial_schema: true,
+        }
     }
 
     /// Validate all templates in a policy set (which includes static policies) and
@@ -90,11 +103,27 @@ impl Validator {
         p: &'a Template,
         mode: ValidationMode,
     ) -> impl Iterator<Item = ValidationError> + 'a {
-        self.validate_entity_types(p)
-            .chain(self.validate_action_ids(p))
-            .chain(self.validate_action_application(p))
-            .map(move |note| ValidationError::with_policy_id(p.id(), None, note))
-            .chain(self.typecheck_policy(p, mode))
+        if self.partial_schema {
+            // We skip `validate_entity_types`, `validate_action_ids`, and
+            // `validate_action_application` passes for partial schema
+            // validation because there may be arbitrary extra entity types and
+            // actions, so we can never claim that one doesn't exist.
+            None
+        } else {
+            Some(
+                self.validate_entity_types(p)
+                    .chain(self.validate_action_ids(p))
+                    // We could usefully update this pass to apply to partial
+                    // schema if it only failed when there is a known action
+                    // applied to known principal/resource entity types that are
+                    // not in its `appliesTo`.
+                    .chain(self.validate_action_application(p))
+                    .map(move |note| ValidationError::with_policy_id(p.id(), None, note)),
+            )
+        }
+        .into_iter()
+        .flatten()
+        .chain(self.typecheck_policy(p, mode))
     }
 
     /// Construct a Typechecker instance and use it to detect any type errors in
@@ -105,7 +134,7 @@ impl Validator {
         t: &'a Template,
         mode: ValidationMode,
     ) -> impl Iterator<Item = ValidationError> + 'a {
-        let typecheck = Typechecker::new(&self.schema);
+        let typecheck = Typechecker::new(&self.schema, self.partial_schema);
         let mut type_errors = HashSet::new();
         typecheck.typecheck_policy(t, mode, &mut type_errors);
         type_errors.into_iter().map(|type_error| {

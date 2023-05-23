@@ -3642,7 +3642,9 @@ mod schema_based_parsing_tests {
     /// Test that involves open entities
     #[test]
     #[should_panic(
-        expected = "UnsupportedSchemaFeature(\"Records and entities with additional attributes are not yet implemented.\")"
+        // Schema based parsing is not yet implemented for partial schema, so
+        // the extra attribute is treated as an error.
+        expected = r#"DeserializationError(UnexpectedEntityAttr { uid: EntityUID { ty: Concrete(Name { id: Id("Employee"), path: [] }), eid: Eid("12UA45") }, attr: "foobar" })"#
     )]
     fn open_entities() {
         let schema = Schema::from_str(
