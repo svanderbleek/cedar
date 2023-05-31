@@ -163,6 +163,7 @@ mod test {
                     foo_type.into(),
                     EntityType {
                         member_of_types: vec![],
+                        member_of_types_incomplete: false,
                         shape: AttributesOrContext::default(),
                     },
                 ),
@@ -170,6 +171,7 @@ mod test {
                     bar_type.into(),
                     EntityType {
                         member_of_types: vec![],
+                        member_of_types_incomplete: false,
                         shape: AttributesOrContext::default(),
                     },
                 ),
@@ -183,6 +185,7 @@ mod test {
                         context: AttributesOrContext::default(),
                     }),
                     member_of: None,
+                    member_of_incomplete: false,
                     attributes: None,
                 },
             )],

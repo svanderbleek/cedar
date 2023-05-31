@@ -481,6 +481,13 @@ impl Validator {
         Self(cedar_policy_validator::Validator::new(schema.0))
     }
 
+    /// Construct a new `Validator` to validate policies using the given partial
+    /// schema `Schema`. FIXME: This API sucks. We should instead configure
+    /// partial validation as part of `mode` in `validate` or in the schema.
+    pub fn partial_schema_validator(schema: Schema) -> Self {
+        Self(cedar_policy_validator::Validator::partial_schema_validator(schema.0))
+    }
+
     /// Validate all policies in a policy set, collecting all validation errors
     /// found into the returned `ValidationResult`. Each error is returned together with the
     /// policy id of the policy where the error was found. If a policy id

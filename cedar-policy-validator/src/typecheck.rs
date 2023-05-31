@@ -2118,16 +2118,6 @@ impl<'a> Typechecker<'a> {
         })
     }
 
-    /// Return true if the EntityUID is either exactly the euid of a defined
-    /// action or it has an entity type defined in the schema.
-    fn is_defined_entity_type_or_action(&self, euid: &EntityUID) -> bool {
-        self.schema.get_action_id(euid).is_some()
-            || match euid.entity_type() {
-                EntityType::Concrete(name) => self.schema.get_entity_type(name).is_some(),
-                EntityType::Unspecified => false,
-            }
-    }
-
     // Given an expression, if that expression is a literal or the `action` head
     // variable, return it as an EntityUID. Return `None` otherwise.
     fn euid_from_euid_literal_or_action(request_env: &RequestEnv, e: &Expr) -> Option<EntityUID> {
@@ -2210,8 +2200,17 @@ impl<'a> Typechecker<'a> {
                     }
                 }
                 (Some(EntityType::Concrete(var_name)), Some(descendants)) => {
+                    let open_ancestor_set = self
+                        .schema
+                        .get_entity_type(var_name)
+                        .map(|ety| ety.open_ancestor_set)
+                        // Treats a undefined entity type as having an open
+                        // ancestor set so that `<undefined entity type> in *`
+                        // has type `Bool`.
+                        .unwrap_or(true);
                     Typechecker::entity_in_descendants(
                         var_name,
+                        open_ancestor_set,
                         descendants,
                         in_expr,
                         lhs_expr,
@@ -2244,12 +2243,7 @@ impl<'a> Typechecker<'a> {
     ) -> TypecheckAnswer<'c> {
         if let Some(rhs) = Typechecker::euids_from_euid_literals_or_action(request_env, rhs_elems) {
             match lhs_euid.entity_type() {
-                // This case only requires that `lhs` is a defined entity type
-                // or action because we assume that `memberOf` and
-                // `memberOfTypes` lists are complete. Even when the `rhs` is
-                // not declared, if it is not in the `memberOf` list, then it
-                // cannot be an ancestor of `lhs`.
-                EntityType::Concrete(name) if self.is_defined_entity_type_or_action(&lhs_euid) => {
+                EntityType::Concrete(name) => {
                     // We don't want to apply the action hierarchy check to
                     // non-action entities, but now we have a set of entities.
                     // We can apply the check as long as any are actions. The
@@ -2262,8 +2256,16 @@ impl<'a> Typechecker<'a> {
                             EntityType::Unspecified => false,
                         });
                     if lhs_is_action && !actions.is_empty() {
+                        let open_ancestor_set = self
+                            .schema
+                            .get_action_id(&lhs_euid)
+                            .map(|a| a.open_ancestor_set)
+                            // Treats a undefined action as having an open
+                            // ancestor set.
+                            .unwrap_or(true);
                         self.type_of_euid_in_euids(
                             lhs_euid,
+                            open_ancestor_set,
                             actions,
                             ActionHeadVar::Action,
                             in_expr,
@@ -2271,8 +2273,16 @@ impl<'a> Typechecker<'a> {
                             rhs_expr,
                         )
                     } else if !lhs_is_action && !non_actions.is_empty() {
+                        let open_ancestor_set = self
+                            .schema
+                            .get_entity_type(name)
+                            .map(|ety| ety.open_ancestor_set)
+                            // Treats a undefined entity type as having an open
+                            // ancestor set.
+                            .unwrap_or(true);
                         self.type_of_euid_in_euids(
                             lhs_euid,
+                            open_ancestor_set,
                             non_actions,
                             PrincipalOrResourceHeadVar::PrincipalOrResource,
                             in_expr,
@@ -2289,18 +2299,6 @@ impl<'a> Typechecker<'a> {
                                 .with_same_source_info(in_expr)
                                 .is_in(lhs_expr, rhs_expr),
                         )
-                    }
-                }
-                // Now it's not defined in the schema, so we don't know if it's
-                // `in` any other entity.
-                EntityType::Concrete(_) => {
-                    let typed_expr = ExprBuilder::with_data(Some(Type::primitive_boolean()))
-                        .with_same_source_info(in_expr)
-                        .is_in(lhs_expr, rhs_expr);
-                    if self.partial_schema {
-                        TypecheckAnswer::success(typed_expr)
-                    } else {
-                        TypecheckAnswer::fail(typed_expr)
                     }
                 }
                 // Unspecified entities will be detected by a different part of the validator.
@@ -2329,6 +2327,7 @@ impl<'a> Typechecker<'a> {
     fn type_of_euid_in_euids<'b, K>(
         &self,
         lhs: EntityUID,
+        lhs_open_ancestor_set: bool,
         rhs: impl IntoIterator<Item = EntityUID>,
         var: impl HeadVar<K>,
         in_expr: &Expr,
@@ -2344,6 +2343,7 @@ impl<'a> Typechecker<'a> {
         ) {
             Typechecker::entity_in_descendants(
                 &lhs_entity,
+                lhs_open_ancestor_set,
                 rhs_descendants,
                 in_expr,
                 lhs_expr,
@@ -2362,6 +2362,7 @@ impl<'a> Typechecker<'a> {
     /// type false if it is not, and boolean otherwise.
     fn entity_in_descendants<'b, K>(
         lhs_entity: &K,
+        lhs_open_ancestor_set: bool,
         rhs_descendants: impl IntoIterator<Item = K>,
         in_expr: &Expr,
         lhs_expr: Expr<Option<Type>>,
@@ -2372,7 +2373,7 @@ impl<'a> Typechecker<'a> {
     {
         let is_var_in_descendants = rhs_descendants.into_iter().any(|e| &e == lhs_entity);
         TypecheckAnswer::success(
-            ExprBuilder::with_data(Some(if is_var_in_descendants {
+            ExprBuilder::with_data(Some(if lhs_open_ancestor_set || is_var_in_descendants {
                 Type::primitive_boolean()
             } else {
                 Type::singleton_boolean(false)
