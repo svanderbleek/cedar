@@ -19,11 +19,10 @@ pub(crate) fn assert_partial_typecheck(
     policy: StaticPolicy,
 ) {
     let schema = schema.try_into().expect("Failed to construct schema.");
-    let typechecker = Typechecker::new(&schema, true);
+    let typechecker = Typechecker::new(&schema, ValidationMode::Partial);
     let mut type_errors: HashSet<TypeError> = HashSet::new();
     let typechecked = typechecker.typecheck_policy(
         &Template::link_static_policy(policy.clone()).0,
-        ValidationMode::Permissive,
         &mut type_errors,
     );
     assert_eq!(type_errors, HashSet::new(), "Did not expect any errors.");
@@ -36,11 +35,10 @@ pub(crate) fn assert_partial_typecheck_fail(
     expected_type_errors: Vec<TypeError>,
 ) {
     let schema = schema.try_into().expect("Failed to construct schema.");
-    let typechecker = Typechecker::new(&schema, true);
+    let typechecker = Typechecker::new(&schema, ValidationMode::Partial);
     let mut type_errors: HashSet<TypeError> = HashSet::new();
     let typechecked = typechecker.typecheck_policy(
         &Template::link_static_policy(policy.clone()).0,
-        ValidationMode::Permissive,
         &mut type_errors,
     );
     assert_expected_type_errors(&expected_type_errors, &type_errors);

@@ -51,6 +51,18 @@ pub enum ValidationMode {
     #[default]
     Strict,
     Permissive,
+    Partial,
+}
+
+impl ValidationMode {
+    /// Does this mode use partial validation. We could conceivably have a
+    /// strict/partial validation mode.
+    fn is_partial(self) -> bool {
+        match self {
+            ValidationMode::Strict | ValidationMode::Permissive => false,
+            ValidationMode::Partial => true,
+        }
+    }
 }
 
 /// Structure containing the context needed for policy validation. This is
@@ -58,25 +70,12 @@ pub enum ValidationMode {
 #[derive(Debug)]
 pub struct Validator {
     schema: ValidatorSchema,
-    partial_schema: bool,
 }
 
 impl Validator {
     /// Construct a new Validator from a schema file.
     pub fn new(schema: ValidatorSchema) -> Validator {
-        Self {
-            schema,
-            partial_schema: false,
-        }
-    }
-
-    /// Construct a new Validator which will perform unsound validation given a
-    /// possibly incomplete schema file.
-    pub fn partial_schema_validator(schema: ValidatorSchema) -> Validator {
-        Self {
-            schema,
-            partial_schema: true,
-        }
+        Self { schema }
     }
 
     /// Validate all templates in a policy set (which includes static policies) and
@@ -103,7 +102,7 @@ impl Validator {
         p: &'a Template,
         mode: ValidationMode,
     ) -> impl Iterator<Item = ValidationError> + 'a {
-        if self.partial_schema {
+        if mode.is_partial() {
             // We skip `validate_entity_types`, `validate_action_ids`, and
             // `validate_action_application` passes for partial schema
             // validation because there may be arbitrary extra entity types and
@@ -134,9 +133,9 @@ impl Validator {
         t: &'a Template,
         mode: ValidationMode,
     ) -> impl Iterator<Item = ValidationError> + 'a {
-        let typecheck = Typechecker::new(&self.schema, self.partial_schema);
+        let typecheck = Typechecker::new(&self.schema, mode);
         let mut type_errors = HashSet::new();
-        typecheck.typecheck_policy(t, mode, &mut type_errors);
+        typecheck.typecheck_policy(t, &mut type_errors);
         type_errors.into_iter().map(|type_error| {
             let (kind, location) = type_error.kind_and_location();
             ValidationError::with_policy_id(t.id(), location, ValidationErrorKind::type_error(kind))

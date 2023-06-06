@@ -1702,9 +1702,9 @@ mod partial_schema {
         .unwrap();
 
         let (template, _) = Template::link_static_policy(policy);
-        let validate = Validator::partial_schema_validator(schema);
+        let validate = Validator::new(schema);
         let errs = validate
-            .validate_policy(&template, crate::ValidationMode::Permissive)
+            .validate_policy(&template, crate::ValidationMode::Partial)
             .collect::<Vec<_>>();
         assert_eq!(errs, vec![], "Did not expect any validation errors.");
     }

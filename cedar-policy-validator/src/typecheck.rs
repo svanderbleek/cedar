@@ -252,12 +252,12 @@ pub enum PolicyCheck {
 pub struct Typechecker<'a> {
     schema: &'a ValidatorSchema,
     extensions: HashMap<Name, ExtensionSchema>,
-    partial_schema: bool,
+    mode: ValidationMode,
 }
 
 impl<'a> Typechecker<'a> {
     /// Construct a new typechecker.
-    pub fn new(schema: &'a ValidatorSchema, partial_schema: bool) -> Typechecker<'a> {
+    pub fn new(schema: &'a ValidatorSchema, mode: ValidationMode) -> Typechecker<'a> {
         // Set the extensions using `all_available_extension_schemas`.
         let extensions = all_available_extension_schemas()
             .into_iter()
@@ -266,7 +266,7 @@ impl<'a> Typechecker<'a> {
         Self {
             schema,
             extensions,
-            partial_schema,
+            mode,
         }
     }
 
@@ -276,15 +276,12 @@ impl<'a> Typechecker<'a> {
     /// succeeds, then the method will return true, and no items will be
     /// added to the output list. Otherwise, the function returns false and the
     /// output list is populated with any errors encountered while typechecking.
-    pub fn typecheck_policy(
-        &self,
-        t: &Template,
-        mode: ValidationMode,
-        type_errors: &mut HashSet<TypeError>,
-    ) -> bool {
-        let typecheck_answers = match mode {
+    pub fn typecheck_policy(&self, t: &Template, type_errors: &mut HashSet<TypeError>) -> bool {
+        let typecheck_answers = match self.mode {
             ValidationMode::Strict => self.typecheck_by_request_env_strict(t),
-            ValidationMode::Permissive => self.typecheck_by_request_env(t),
+            ValidationMode::Permissive | ValidationMode::Partial => {
+                self.typecheck_by_request_env(t)
+            }
         };
 
         // consolidate the results from each query environment
@@ -463,7 +460,7 @@ impl<'a> Typechecker<'a> {
                             })
                     })
             })
-            .chain(if self.partial_schema {
+            .chain(if self.mode.is_partial() {
                 // A partial schema might not list all actions, and may not
                 // include all principal and resource types for the listed ones.
                 // So we typecheck with a fully unknown request to handle these
@@ -1128,7 +1125,7 @@ impl<'a> Typechecker<'a> {
                     // partial schema. The attributes record will be empty if we
                     // try to access it later, so all attributes will have the
                     // bottom type.
-                    None if self.partial_schema => TypecheckAnswer::success(
+                    None if self.mode.is_partial() => TypecheckAnswer::success(
                         ExprBuilder::with_data(Some(Type::possibly_unspecified_entity_reference(
                             euid.entity_type().clone(),
                         )))
@@ -1524,7 +1521,7 @@ impl<'a> Typechecker<'a> {
                             // the attribute but there may be additional
                             // attributes, we do not fail and instead return the
                             // bottom type (`Never`).
-                            None if self.partial_schema
+                            None if self.mode.is_partial()
                                 && Type::may_have_attr(self.schema, typ_actual, attr) =>
                             {
                                 TypecheckAnswer::success(
@@ -2193,7 +2190,7 @@ impl<'a> Typechecker<'a> {
                     let in_expr = ExprBuilder::with_data(Some(Type::primitive_boolean()))
                         .with_same_source_info(in_expr)
                         .is_in(lhs_expr, rhs_expr);
-                    if self.partial_schema {
+                    if self.mode.is_partial() {
                         TypecheckAnswer::success(in_expr)
                     } else {
                         TypecheckAnswer::fail(in_expr)

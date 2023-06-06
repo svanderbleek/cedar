@@ -359,13 +359,11 @@ pub fn validate(args: &ValidateArgs) -> CedarExitCode {
         }
     };
 
-    let (validator, mode) = if args.partial_schema {
-        (
-            Validator::partial_schema_validator(schema),
-            ValidationMode::Permissive,
-        )
+    let validator = Validator::new(schema);
+    let mode = if args.partial_schema {
+        ValidationMode::Partial
     } else {
-        (Validator::new(schema), ValidationMode::default())
+        ValidationMode::default()
     };
     let result = validator.validate(&pset, mode);
     if result.validation_passed() {

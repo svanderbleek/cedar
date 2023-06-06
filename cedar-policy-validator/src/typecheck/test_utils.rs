@@ -94,7 +94,7 @@ pub(crate) fn with_typechecker_from_schema<F>(
     F: FnOnce(Typechecker<'_>),
 {
     let schema = schema.try_into().expect("Failed to construct schema.");
-    let typechecker = Typechecker::new(&schema, false);
+    let typechecker = Typechecker::new(&schema, ValidationMode::default());
     fun(typechecker);
 }
 
@@ -141,17 +141,15 @@ pub(crate) fn assert_policy_typechecks(
     with_typechecker_from_schema(schema, |mut typechecker| {
         let policy: Arc<Template> = policy.into();
         let mut type_errors: HashSet<TypeError> = HashSet::new();
-        let typechecked =
-            typechecker.typecheck_policy(&policy, ValidationMode::default(), &mut type_errors);
+        let typechecked = typechecker.typecheck_policy(&policy, &mut type_errors);
         assert_eq!(type_errors, HashSet::new(), "Did not expect any errors.");
         assert!(typechecked, "Expected that policy would typecheck.");
 
         // Ensure that partial schema validation doesn't cause any policy that
         // should validate with a complete schema to no longer validate with the
         // same complete schema.
-        typechecker.partial_schema = true;
-        let typechecked =
-            typechecker.typecheck_policy(&policy, ValidationMode::Permissive, &mut type_errors);
+        typechecker.mode = ValidationMode::Permissive;
+        let typechecked = typechecker.typecheck_policy(&policy, &mut type_errors);
         assert_eq!(
             type_errors,
             HashSet::new(),
@@ -171,11 +169,8 @@ pub(crate) fn assert_policy_typecheck_fails(
 ) {
     with_typechecker_from_schema(schema, |typechecker| {
         let mut type_errors: HashSet<TypeError> = HashSet::new();
-        let typechecked = typechecker.typecheck_policy(
-            &static_to_template(policy.clone()),
-            ValidationMode::default(),
-            &mut type_errors,
-        );
+        let typechecked =
+            typechecker.typecheck_policy(&static_to_template(policy.clone()), &mut type_errors);
         assert_expected_type_errors(&expected_type_errors, &type_errors);
         assert!(!typechecked, "Expected that policy would not typecheck.");
     });

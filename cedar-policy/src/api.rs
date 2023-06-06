@@ -458,6 +458,8 @@ pub enum ValidationMode {
     Strict,
     /// Validate that policies do not contain any type errors.
     Permissive,
+    /// Validate using a partial schema. Policies may contain type errors.
+    Partial,
 }
 
 impl From<ValidationMode> for cedar_policy_validator::ValidationMode {
@@ -465,6 +467,7 @@ impl From<ValidationMode> for cedar_policy_validator::ValidationMode {
         match mode {
             ValidationMode::Strict => Self::Strict,
             ValidationMode::Permissive => Self::Permissive,
+            ValidationMode::Partial => Self::Partial,
         }
     }
 }
@@ -479,13 +482,6 @@ impl Validator {
     /// `Schema`.
     pub fn new(schema: Schema) -> Self {
         Self(cedar_policy_validator::Validator::new(schema.0))
-    }
-
-    /// Construct a new `Validator` to validate policies using the given partial
-    /// schema `Schema`. FIXME: This API sucks. We should instead configure
-    /// partial validation as part of `mode` in `validate` or in the schema.
-    pub fn partial_schema_validator(schema: Schema) -> Self {
-        Self(cedar_policy_validator::Validator::partial_schema_validator(schema.0))
     }
 
     /// Validate all policies in a policy set, collecting all validation errors
