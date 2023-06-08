@@ -1063,13 +1063,10 @@ impl<'a> Typechecker<'a> {
                     // request environment that was not constructed from the
                     // schema cross product, which will not happen through our
                     // public entry points, but it can occur if calling
-                    // `typecheck` directly.
-                    None => {
-                        debug_assert!(false, "Action in request type environment is not defined in the schema, but this impossible for requests constructed from the action cross product.");
-                        TypecheckAnswer::fail(
-                            ExprBuilder::new().with_same_source_info(e).var(Var::Action),
-                        )
-                    }
+                    // `typecheck` directly which happens in our tests.
+                    None => TypecheckAnswer::fail(
+                        ExprBuilder::new().with_same_source_info(e).var(Var::Action),
+                    ),
                 }
             }
             ExprKind::Var(Var::Resource) => TypecheckAnswer::success(
@@ -2245,7 +2242,7 @@ impl<'a> Typechecker<'a> {
                     // non-action entities, but now we have a set of entities.
                     // We can apply the check as long as any are actions. The
                     // non-actions are omitted from the check, but they can
-                    // never be ancestor of `Action`.
+                    // never be an ancestor of `Action`.
                     let lhs_is_action = is_action_entity_type(name);
                     let (actions, non_actions): (Vec<_>, Vec<_>) =
                         rhs.into_iter().partition(|e| match e.entity_type() {
@@ -2347,11 +2344,14 @@ impl<'a> Typechecker<'a> {
                 rhs_expr,
             )
         } else {
-            TypecheckAnswer::success(
-                ExprBuilder::with_data(Some(Type::primitive_boolean()))
-                    .with_same_source_info(in_expr)
-                    .is_in(lhs_expr, rhs_expr),
-            )
+            let annotated_expr = ExprBuilder::with_data(Some(Type::primitive_boolean()))
+                .with_same_source_info(in_expr)
+                .is_in(lhs_expr, rhs_expr);
+            if self.mode.is_partial() {
+                TypecheckAnswer::success(annotated_expr)
+            } else {
+                TypecheckAnswer::fail(annotated_expr)
+            }
         }
     }
 
