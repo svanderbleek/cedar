@@ -20,6 +20,7 @@ anyhow = "1.0"
 
 [features]
 default = []
+partial_schema = ["cedar-policy/partial_schema"]
 
 [dev-dependencies]
 assert_cmd = "2.0"

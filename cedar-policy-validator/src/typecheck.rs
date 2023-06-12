@@ -277,11 +277,10 @@ impl<'a> Typechecker<'a> {
     /// added to the output list. Otherwise, the function returns false and the
     /// output list is populated with any errors encountered while typechecking.
     pub fn typecheck_policy(&self, t: &Template, type_errors: &mut HashSet<TypeError>) -> bool {
-        let typecheck_answers = match self.mode {
-            ValidationMode::Strict => self.typecheck_by_request_env_strict(t),
-            ValidationMode::Permissive | ValidationMode::Partial => {
-                self.typecheck_by_request_env(t)
-            }
+        let typecheck_answers = if self.mode.is_strict() {
+            self.typecheck_by_request_env_strict(t)
+        } else {
+            self.typecheck_by_request_env(t)
         };
 
         // consolidate the results from each query environment

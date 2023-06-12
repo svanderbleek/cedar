@@ -1,5 +1,6 @@
 //! Contains test for typechecking with partial schema files.
 #![cfg(test)]
+#![cfg(feature = "partial_schema")]
 // GRCOV_STOP_COVERAGE
 
 use std::collections::HashSet;

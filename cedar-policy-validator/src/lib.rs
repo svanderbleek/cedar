@@ -51,6 +51,7 @@ pub enum ValidationMode {
     #[default]
     Strict,
     Permissive,
+    #[cfg(feature = "partial_schema")]
     Partial,
 }
 
@@ -60,7 +61,17 @@ impl ValidationMode {
     fn is_partial(self) -> bool {
         match self {
             ValidationMode::Strict | ValidationMode::Permissive => false,
+            #[cfg(feature = "partial_schema")]
             ValidationMode::Partial => true,
+        }
+    }
+
+    fn is_strict(self) -> bool {
+        match self {
+            ValidationMode::Strict => true,
+            ValidationMode::Permissive => false,
+            #[cfg(feature = "partial_schema")]
+            ValidationMode::Partial => false,
         }
     }
 }

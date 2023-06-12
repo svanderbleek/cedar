@@ -67,6 +67,7 @@ pub struct ValidateArgs {
     pub policies_file: String,
     /// Validate the policy using partial schema validation
     #[arg(long = "partial-schema")]
+    #[cfg(feature = "partial_schema")]
     pub partial_schema: bool,
 }
 
@@ -360,12 +361,18 @@ pub fn validate(args: &ValidateArgs) -> CedarExitCode {
     };
 
     let validator = Validator::new(schema);
+
+    #[cfg(partial_schema)]
     let mode = if args.partial_schema {
         ValidationMode::Partial
     } else {
         ValidationMode::default()
     };
+    #[cfg(not(partial_schema))]
+    let mode = ValidationMode::default();
+
     let result = validator.validate(&pset, mode);
+
     if result.validation_passed() {
         println!("Validation Passed");
         return CedarExitCode::Success;

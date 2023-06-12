@@ -459,6 +459,7 @@ pub enum ValidationMode {
     /// Validate that policies do not contain any type errors.
     Permissive,
     /// Validate using a partial schema. Policies may contain type errors.
+    #[cfg(feature = "partial_schema")]
     Partial,
 }
 
@@ -467,6 +468,7 @@ impl From<ValidationMode> for cedar_policy_validator::ValidationMode {
         match mode {
             ValidationMode::Strict => Self::Strict,
             ValidationMode::Permissive => Self::Permissive,
+            #[cfg(feature = "partial_schema")]
             ValidationMode::Partial => Self::Partial,
         }
     }
@@ -3645,9 +3647,7 @@ mod schema_based_parsing_tests {
     /// Test that involves open entities
     #[test]
     #[should_panic(
-        // Schema based parsing is not yet implemented for partial schema, so
-        // the extra attribute is treated as an error.
-        expected = r#"DeserializationError(UnexpectedEntityAttr { uid: EntityUID { ty: Concrete(Name { id: Id("Employee"), path: [] }), eid: Eid("12UA45") }, attr: "foobar" })"#
+        expected = r#"UnsupportedSchemaFeature("Records and entities with additional attributes are not yet implemented.")"#
     )]
     fn open_entities() {
         let schema = Schema::from_str(

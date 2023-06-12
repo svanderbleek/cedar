@@ -1680,6 +1680,7 @@ mod test {
 }
 
 #[cfg(test)]
+#[cfg(feature = "partial_schema")]
 mod partial_schema {
     use cedar_policy_core::{
         ast::{StaticPolicy, Template},
