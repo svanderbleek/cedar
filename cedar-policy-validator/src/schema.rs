@@ -680,25 +680,26 @@ impl ValidatorNamespaceDef {
                 attributes,
                 additional_attributes,
             }) => {
-                if cfg!(not(feature = "partial_schema")) && additional_attributes
-                {
+                if cfg!(not(feature = "partial_schema")) && additional_attributes {
                     Err(SchemaError::UnsupportedSchemaFeature(
                         UnsupportedFeature::OpenRecordsAndEntities,
                     ))
                 } else {
-                Ok(
-                Self::parse_record_attributes(default_namespace, attributes)?.map(move |attrs| {
-                    Type::record_with_attributes(
-                        attrs,
-
-                        if additional_attributes {
-                            OpenTag::OpenAttributes
-                        } else {
-                            OpenTag::ClosedAttributes
-                        },
+                    Ok(
+                        Self::parse_record_attributes(default_namespace, attributes)?.map(
+                            move |attrs| {
+                                Type::record_with_attributes(
+                                    attrs,
+                                    if additional_attributes {
+                                        OpenTag::OpenAttributes
+                                    } else {
+                                        OpenTag::ClosedAttributes
+                                    },
+                                )
+                            },
+                        ),
                     )
-                }))
-              }
+                }
             }
             SchemaType::Type(SchemaTypeVariant::Entity { name }) => {
                 let entity_type_name = Self::parse_possibly_qualified_name_with_default_namespace(
