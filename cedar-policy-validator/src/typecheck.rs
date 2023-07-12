@@ -2217,6 +2217,9 @@ impl<'a> Typechecker<'a> {
                 ),
             }
         } else {
+            // One or more of the elements on the right is not an entity
+            // literal, so this does not apply. The `in` is still valid, so
+            // typechecking succeeds with type Boolean.
             TypecheckAnswer::success(
                 ExprBuilder::with_data(Some(Type::primitive_boolean()))
                     .with_same_source_info(in_expr)

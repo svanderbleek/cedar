@@ -638,7 +638,7 @@ mod test {
             et.shape.into_inner(),
             SchemaType::Type(SchemaTypeVariant::Record {
                 attributes: BTreeMap::new(),
-                additional_attributes: false,
+                additional_attributes: false
             })
         );
     }
@@ -654,7 +654,7 @@ mod test {
             et.shape.into_inner(),
             SchemaType::Type(SchemaTypeVariant::Record {
                 attributes: BTreeMap::new(),
-                additional_attributes: false,
+                additional_attributes: false
             })
         );
     }

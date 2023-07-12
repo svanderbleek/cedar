@@ -438,8 +438,7 @@ impl Type {
                         .map_or(false, |entity_type| entity_type.attr(attr).is_some())
                 })
             }
-            // UBs of ActionEntities are AnyEntity. So if we have an
-            // ActionEntity here its attrs are known.
+            // UBs of ActionEntities are AnyEntity. So if we have an ActionEntity here its attrs are known.
             Type::EntityOrRecord(EntityRecordKind::ActionEntity { attrs, .. }) => {
                 attrs.iter().any(|(found_attr, _)| attr.eq(found_attr))
             }

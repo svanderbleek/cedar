@@ -88,7 +88,6 @@ pub struct ValidatorNamespaceDef {
     type_defs: TypeDefs,
     /// The preprocessed entity type declarations from the schema fragment json.
     entity_types: EntityTypesDef,
-
     /// The preprocessed action declarations from the schema fragment json.
     actions: ActionsDef,
 }
