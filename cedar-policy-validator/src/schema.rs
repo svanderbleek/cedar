@@ -982,9 +982,9 @@ impl ValidatorSchema {
             .flat_map(|e| e.descendants.iter().cloned())
             .collect::<HashSet<_>>();
         entities_types_open_ancestors.iter().for_each(|name| {
-            entity_types
-                .get_mut(name)
-                .map(|descendant| descendant.open_ancestor_set = true);
+            if let Some(descendant) = entity_types.get_mut(name) {
+                descendant.open_ancestor_set = true;
+            }
         });
 
         // Pass `true` here so that we also check that the action hierarchy does
@@ -996,9 +996,9 @@ impl ValidatorSchema {
             .flat_map(|e| e.descendants.iter().cloned())
             .collect::<HashSet<_>>();
         action_open_ancestors.iter().for_each(|name| {
-            action_ids
-                .get_mut(name)
-                .map(|descendant| descendant.open_ancestor_set = true);
+            if let Some(descendant) = action_ids.get_mut(name) {
+                descendant.open_ancestor_set = true;
+            }
         });
 
         // Return with an error if there is an undeclared entity or action
