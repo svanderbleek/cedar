@@ -66,6 +66,7 @@ impl ValidationMode {
         }
     }
 
+    /// Does this mode apply strict validation rules.
     fn is_strict(self) -> bool {
         match self {
             ValidationMode::Strict => true,
