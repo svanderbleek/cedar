@@ -296,7 +296,7 @@ impl<'q, 'e> Evaluator<'e> {
             ExprKind::Lit(lit) => Ok(lit.clone().into()),
             ExprKind::Slot(id) => slots
                 .get(id)
-                .ok_or_else(|| err::EvaluationError::TemplateInstantiationError(*id))
+                .ok_or_else(|| err::EvaluationError::UnlinkedSlot(*id))
                 .map(|euid| PartialValue::from(euid.clone())),
             ExprKind::Var(v) => match v {
                 Var::Principal => Ok(self.principal.evaluate(*v)),
@@ -943,6 +943,7 @@ pub mod test {
         .expect("Failed to create rich entities")
     }
 
+    #[cfg(feature = "partial-eval")]
     #[test]
     fn partial_entity_stores_in_set() {
         let q = basic_request();
@@ -983,6 +984,7 @@ pub mod test {
         assert!(r == Either::Right(expected_residual) || r == Either::Right(expected_residual2));
     }
 
+    #[cfg(feature = "partial-eval")]
     #[test]
     fn partial_entity_stores_in() {
         let q = basic_request();
@@ -1011,6 +1013,7 @@ pub mod test {
         assert_eq!(r, Either::Right(expected_residual));
     }
 
+    #[cfg(feature = "partial-eval")]
     #[test]
     fn partial_entity_stores_hasattr() {
         let q = basic_request();
@@ -1030,6 +1033,7 @@ pub mod test {
         assert_eq!(r, Either::Right(expected_residual));
     }
 
+    #[cfg(feature = "partial-eval")]
     #[test]
     fn partial_entity_stores_getattr() {
         let q = basic_request();
@@ -3734,7 +3738,7 @@ pub mod test {
         let slots = HashMap::new();
         let r = evaluator.partial_interpret(&e, &slots);
         match r {
-            Err(EvaluationError::TemplateInstantiationError(slotid)) => {
+            Err(EvaluationError::UnlinkedSlot(slotid)) => {
                 assert_eq!(slotid, SlotId::principal())
             }
             Err(e) => panic!("Got wrong error: {e}"),
@@ -3891,6 +3895,7 @@ pub mod test {
             .and_then(|e| evaluator.partial_interpret(e)),
             Err(EvaluationError::InvalidRestrictedExpression { .. })
         ));
+        #[cfg(feature = "ipaddr")]
         assert!(matches!(
             BorrowedRestrictedExpr::new(&Expr::call_extension_fn(
                 "ip".parse().expect("should be a valid Name"),
@@ -4863,6 +4868,7 @@ pub mod test {
         assert_eq!(r, PartialValue::Residual(e));
     }
 
+    #[cfg(feature = "ipaddr")]
     #[test]
     fn partial_ext_unfold() {
         let es = Entities::new();

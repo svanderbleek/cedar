@@ -15,11 +15,11 @@
  */
 
 use super::utils::unwrap_or_clone;
-use super::EstToAstError;
+use super::FromJsonError;
 use crate::ast;
-use crate::entities::{JSONValue, JsonDeserializationError, TypeAndId};
+use crate::entities::{EscapeKind, JSONValue, JsonDeserializationError, TypeAndId};
 use crate::parser::cst;
-use crate::parser::err::{ParseError, ParseErrors, WithContext};
+use crate::parser::err::{ParseError, ParseErrors};
 use crate::parser::unescape;
 use crate::parser::ASTNode;
 use either::Either;
@@ -463,8 +463,8 @@ impl Expr {
 }
 
 impl TryFrom<Expr> for ast::Expr {
-    type Error = EstToAstError;
-    fn try_from(expr: Expr) -> Result<ast::Expr, EstToAstError> {
+    type Error = FromJsonError;
+    fn try_from(expr: Expr) -> Result<ast::Expr, Self::Error> {
         match expr {
             Expr::ExprNoExt(ExprNoExt::Value(jsonvalue)) => {
                 jsonvalue.into_expr().map(Into::into).map_err(Into::into)
@@ -536,7 +536,7 @@ impl TryFrom<Expr> for ast::Expr {
                 match (left_c, right_c) {
                     (_, Some(c)) => Ok(ast::Expr::mul(left, *c)),
                     (Some(c), _) => Ok(ast::Expr::mul(right, *c)),
-                    (None, None) => Err(EstToAstError::MultiplicationByNonConstant {
+                    (None, None) => Err(Self::Error::MultiplicationByNonConstant {
                         arg1: left,
                         arg2: right,
                     })?,
@@ -563,7 +563,7 @@ impl TryFrom<Expr> for ast::Expr {
             Expr::ExprNoExt(ExprNoExt::Like { left, pattern }) => {
                 match unescape::to_pattern(&pattern) {
                     Ok(pattern) => Ok(ast::Expr::like((*left).clone().try_into()?, pattern)),
-                    Err(errs) => Err(EstToAstError::UnescapeError(errs)),
+                    Err(errs) => Err(Self::Error::UnescapeError(errs)),
                 }
             }
             Expr::ExprNoExt(ExprNoExt::If {
@@ -579,16 +579,16 @@ impl TryFrom<Expr> for ast::Expr {
                 elements
                     .into_iter()
                     .map(|el| el.try_into())
-                    .collect::<Result<Vec<_>, EstToAstError>>()?,
+                    .collect::<Result<Vec<_>, Self::Error>>()?,
             )),
             Expr::ExprNoExt(ExprNoExt::Record(map)) => Ok(ast::Expr::record(
                 map.into_iter()
                     .map(|(k, v)| Ok((k, v.try_into()?)))
-                    .collect::<Result<HashMap<SmolStr, _>, EstToAstError>>()?,
+                    .collect::<Result<HashMap<SmolStr, _>, Self::Error>>()?,
             )),
             Expr::ExtFuncCall(ExtFuncCall { call }) => {
                 match call.len() {
-                    0 => Err(EstToAstError::MissingOperator),
+                    0 => Err(Self::Error::MissingOperator),
                     1 => {
                         // PANIC SAFETY checked that `call.len() == 1`
                         #[allow(clippy::expect_used)]
@@ -596,12 +596,13 @@ impl TryFrom<Expr> for ast::Expr {
                             .into_iter()
                             .next()
                             .expect("already checked that len was 1");
-                        let fn_name = fn_name.parse().map_err(|errs|
-                            JsonDeserializationError::ExtnParseError(WithContext {
-                                context: format!("expected valid operator or extension function name; got {fn_name}"),
+                        let fn_name = fn_name.parse().map_err(|errs| {
+                            JsonDeserializationError::ParseEscape {
+                                kind: EscapeKind::Extension,
+                                value: fn_name.to_string(),
                                 errs,
-                            }.into())
-                        )?;
+                            }
+                        })?;
                         Ok(ast::Expr::call_extension_fn(
                             fn_name,
                             args.into_iter()
@@ -609,7 +610,7 @@ impl TryFrom<Expr> for ast::Expr {
                                 .collect::<Result<_, _>>()?,
                         ))
                     }
-                    _ => Err(EstToAstError::MultipleOperators {
+                    _ => Err(Self::Error::MultipleOperators {
                         ops: call.into_keys().collect(),
                     }),
                 }
