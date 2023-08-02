@@ -2555,10 +2555,10 @@ impl<'a> Typechecker<'a> {
     /// error.  A closure is returned rather than constructing the error in this
     /// function so that we can use the function in the strict typechecker where
     /// a different instantiation of the generic expression type is used.
-    fn lookup_extension_function(
-        &self,
-        f: &Name,
-    ) -> Result<&ExtensionFunctionType, impl FnOnce(Expr) -> TypeError> {
+    fn lookup_extension_function<'b>(
+        &'b self,
+        f: &'b Name,
+    ) -> Result<&ExtensionFunctionType, impl FnOnce(Expr) -> TypeError + 'b> {
         let extension_funcs: Vec<&ExtensionFunctionType> = self
             .extensions
             .iter()
@@ -2566,10 +2566,10 @@ impl<'a> Typechecker<'a> {
             .collect();
 
         let fn_name_str = f.to_string();
-        match extension_funcs.len() {
-            1 => Ok(extension_funcs[0]),
-            i => Err(move |e| {
-                if i == 0 {
+        match extension_funcs.get(0) {
+            Some(e) if extension_funcs.len() == 1 => Ok(e),
+            _ => Err(move |e| {
+                if extension_funcs.is_empty() {
                     TypeError::undefined_extension(e, fn_name_str)
                 } else {
                     TypeError::multiply_defined_extension(e, fn_name_str)

@@ -25,8 +25,6 @@ use lazy_static::lazy_static;
 use miette::{Diagnostic, LabeledSpan, Severity, SourceCode};
 use thiserror::Error;
 
-use crate::ast::RestrictedExpressionError;
-
 use crate::parser::fmt::join_with_conjunction;
 use crate::parser::node::ASTNode;
 
@@ -40,7 +38,7 @@ pub(crate) type RawErrorRecovery<'a> = lalr::ErrorRecovery<RawLocation, RawToken
 type OwnedRawParseError = lalr::ParseError<RawLocation, String, RawUserError>;
 
 /// For errors during parsing
-#[derive(Clone, Debug, Diagnostic, Error, PartialEq)]
+#[derive(Clone, Debug, Diagnostic, Error, PartialEq, Eq)]
 pub enum ParseError {
     /// Error from the CST parser.
     #[error(transparent)]
@@ -50,13 +48,10 @@ pub enum ParseError {
     #[error("poorly formed: {0}")]
     #[diagnostic(code(cedar_policy_core::parser::to_ast_err))]
     ToAST(String),
-    /// Error concerning restricted expressions.
-    #[error(transparent)]
-    RestrictedExpressionError(#[from] RestrictedExpressionError),
 }
 
 /// Error from the CST parser.
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub struct ToCSTError {
     err: OwnedRawParseError,
 }
@@ -164,7 +159,7 @@ fn expected_to_string(expected: &[String]) -> Option<String> {
 }
 
 /// Multiple related parse errors.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ParseErrors(pub Vec<ParseError>);
 
 impl ParseErrors {
@@ -302,12 +297,6 @@ impl From<ParseError> for ParseErrors {
 
 impl From<ToCSTError> for ParseErrors {
     fn from(err: ToCSTError) -> Self {
-        ParseError::from(err).into()
-    }
-}
-
-impl From<RestrictedExpressionError> for ParseErrors {
-    fn from(err: RestrictedExpressionError) -> Self {
         ParseError::from(err).into()
     }
 }

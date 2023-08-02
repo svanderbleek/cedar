@@ -17,8 +17,9 @@
 //! This module contains the Cedar evaluator.
 
 use crate::ast::*;
-use crate::entities::{Dereference, Entities};
+use crate::entities::{Dereference, Entities, EntityAttrValues};
 use crate::extensions::Extensions;
+#[cfg(test)]
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -141,49 +142,6 @@ impl<'e> RestrictedEvaluator<'e> {
     }
 }
 
-struct EntityAttrValues<'a> {
-    attrs: HashMap<EntityUID, HashMap<SmolStr, PartialValue>>,
-    entities: &'a Entities,
-}
-
-impl<'a> EntityAttrValues<'a> {
-    pub fn new<'e>(entities: &'a Entities, extensions: &'e Extensions<'e>) -> Result<Self> {
-        let restricted_eval = RestrictedEvaluator::new(extensions);
-        // Eagerly evaluate each attribute expression in the entities.
-        let attrs = entities
-            .iter()
-            .map(|entity| {
-                Ok((
-                    entity.uid(),
-                    entity
-                        .attrs()
-                        .iter()
-                        .map(|(attr, v)| {
-                            Ok((
-                                attr.to_owned(),
-                                restricted_eval.partial_interpret(v.as_borrowed())?,
-                            ))
-                        })
-                        .collect::<Result<HashMap<SmolStr, PartialValue>>>()?,
-                ))
-            })
-            .collect::<Result<HashMap<EntityUID, HashMap<SmolStr, PartialValue>>>>()?;
-        Ok(Self { attrs, entities })
-    }
-
-    pub fn get(&self, uid: &EntityUID) -> Dereference<'_, HashMap<SmolStr, PartialValue>> {
-        match self.entities.entity(uid) {
-            Dereference::NoSuchEntity => Dereference::NoSuchEntity,
-            Dereference::Residual(r) => Dereference::Residual(r),
-            Dereference::Data(_) => self
-                .attrs
-                .get(uid)
-                .map(Dereference::Data)
-                .unwrap_or_else(|| Dereference::NoSuchEntity),
-        }
-    }
-}
-
 impl<'q, 'e> Evaluator<'e> {
     /// Create a fresh `Evaluator` for the given `request`, which uses the given
     /// `Entities` to resolve entity references. Use the given `Extension`s when
@@ -200,7 +158,7 @@ impl<'q, 'e> Evaluator<'e> {
         extensions: &'e Extensions<'e>,
     ) -> Result<Self> {
         // Eagerly evaluate each attribute expression in the entities.
-        let entity_attr_values = EntityAttrValues::new(entities, extensions)?;
+        let entity_attr_values = entities.get_attr_values()?;
         Ok(Self {
             principal: q.principal().clone(),
             action: q.action().clone(),
@@ -685,7 +643,10 @@ impl<'q, 'e> Evaluator<'e> {
                                 .filter_map(|(k, v)| if k == attr { Some(v) } else { None })
                                 .next()
                                 .ok_or_else(|| {
-                                    EvaluationError::RecordAttrDoesNotExist(attr.clone())
+                                    EvaluationError::RecordAttrDoesNotExist(
+                                        attr.clone(),
+                                        pairs.iter().map(|(f, _)| f.clone()).collect(),
+                                    )
                                 })
                                 .and_then(|e| self.partial_interpret(e, slots))
                         } else if pairs.iter().any(|(k, _v)| k == attr) {
@@ -694,7 +655,10 @@ impl<'q, 'e> Evaluator<'e> {
                                 attr.clone(),
                             )))
                         } else {
-                            Err(EvaluationError::RecordAttrDoesNotExist(attr.clone()))
+                            Err(EvaluationError::RecordAttrDoesNotExist(
+                                attr.clone(),
+                                pairs.iter().map(|(f, _)| f.clone()).collect(),
+                            ))
                         }
                     }
                     // We got a residual, that is not a record at the top level
@@ -704,7 +668,12 @@ impl<'q, 'e> Evaluator<'e> {
             PartialValue::Value(Value::Record(attrs)) => attrs
                 .as_ref()
                 .get(attr)
-                .ok_or_else(|| EvaluationError::RecordAttrDoesNotExist(attr.clone()))
+                .ok_or_else(|| {
+                    EvaluationError::RecordAttrDoesNotExist(
+                        attr.clone(),
+                        attrs.iter().map(|(f, _)| f.clone()).collect(),
+                    )
+                })
                 .map(|v| PartialValue::Value(v.clone())),
             PartialValue::Value(Value::Lit(Literal::EntityUID(uid))) => {
                 match self.entity_attr_values.get(uid.as_ref()) {
@@ -848,7 +817,7 @@ fn stack_size_check() -> Result<()> {
 
 #[cfg(test)]
 pub mod test {
-    use std::str::FromStr;
+    use std::{collections::HashMap, str::FromStr};
 
     use super::*;
 
@@ -1386,7 +1355,10 @@ pub mod test {
                 Expr::val(3),
                 Expr::get_attr(Expr::record(vec![]), "foo".into()),
             )),
-            Err(EvaluationError::RecordAttrDoesNotExist("foo".into()))
+            Err(EvaluationError::RecordAttrDoesNotExist(
+                "foo".into(),
+                vec![]
+            ))
         );
         // if true then <err> else 3
         assert_eq!(
@@ -1395,7 +1367,10 @@ pub mod test {
                 Expr::get_attr(Expr::record(vec![]), "foo".into()),
                 Expr::val(3),
             )),
-            Err(EvaluationError::RecordAttrDoesNotExist("foo".into()))
+            Err(EvaluationError::RecordAttrDoesNotExist(
+                "foo".into(),
+                vec![]
+            ))
         );
         // if false then <err> else 3
         assert_eq!(
@@ -1584,7 +1559,10 @@ pub mod test {
         // {"ham": 3, "eggs": 7}["what"]
         assert_eq!(
             eval.interpret_inline_policy(&Expr::get_attr(ham_and_eggs, "what".into())),
-            Err(EvaluationError::RecordAttrDoesNotExist("what".into()))
+            Err(EvaluationError::RecordAttrDoesNotExist(
+                "what".into(),
+                vec!["eggs".into(), "ham".into()]
+            ))
         );
 
         // {"ham": 3, "eggs": "why"}["ham"]

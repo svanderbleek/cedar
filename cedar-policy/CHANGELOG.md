@@ -2,6 +2,7 @@
 
 ## Unreleased
 - Move public API for partial evaluation behind experimental feature flag.
+- Added an option to eagerly evaluate entity attributes and re-use across calls to `is_authorized`
 
 ### Added
 
@@ -11,9 +12,12 @@
   - `namespace_components` to get the namespace as an iterator over its components.
   - `namespace` to get the namespace as a single string.
 - Fixed bug (#150) around implicit namespaces in action definitions.
+- Support `Request`s with `Unknown` fields for partial evaluation.
 
 ### Changed
 
+- Added list of attributes that do exist to `RecordAttrDoesNotExist` error message.
+- Removed deprecated `__expr` escapes from integration tests.
 - Improved error detection in schema based parsing (fix issues #73, #74).
   - Detect entities with parents of an incorrect entity type.
   - Detect entities with an undeclared entity type.
@@ -43,6 +47,7 @@
 - Renamed `cedar_policy_core::est::EstToAstError` to `cedar_policy_core::est::FromJsonError`
 - More precise "expected tokens" lists in some parse errors
 - Renamed `cedar_policy_core::entities::JsonDeserializationError::ExtensionsError` to `cedar_policy_core::entities::JsonDeserializationError::FailedExtensionsFunctionLookup`.
+- Renamed variants in `cedar_policy::SchemaError`
 
 ## 2.3.0
 
