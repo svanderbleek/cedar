@@ -51,9 +51,10 @@ use crate::{
 use super::type_error::TypeError;
 
 use cedar_policy_core::ast::{
-    BinaryOp, EntityType, EntityUID, Expr, ExprBuilder, ExprKind, Literal, Name, Template, UnaryOp,
-    Var,
+    BinaryOp, EntityType, EntityUID, Expr, ExprBuilder, ExprKind, Literal, Name,
+    PrincipalOrResourceConstraint, SlotId, Template, UnaryOp, Var,
 };
+use itertools::Itertools;
 
 const REQUIRED_STACK_SPACE: usize = 1024 * 100;
 
@@ -314,7 +315,10 @@ impl<'a> Typechecker<'a> {
     /// typechecks it under every schema-defined request environment. The result contains
     /// these environments and the individual typechecking response for each, in no
     /// particular order.
-    pub fn typecheck_by_request_env(&self, t: &Template) -> Vec<(RequestEnv, PolicyCheck)> {
+    pub fn typecheck_by_request_env<'b>(
+        &'b self,
+        t: &'b Template,
+    ) -> Vec<(RequestEnv, PolicyCheck)> {
         self.apply_typecheck_fn_by_request_env(t, |request, expr| {
             let mut type_errors = Vec::new();
             let empty_prior_eff = EffectSet::new();
@@ -338,8 +342,11 @@ impl<'a> Typechecker<'a> {
 
     /// A strict variant of `typecheck_by_request_env` which is used by cedar policy
     /// analysis.
-    pub fn typecheck_by_request_env_strict(&self, t: &Template) -> Vec<(RequestEnv, PolicyCheck)> {
-        self.apply_typecheck_fn_by_request_env(t, |request, expr| {
+    pub fn typecheck_by_request_env_strict<'b>(
+        &'b self,
+        t: &'b Template,
+    ) -> Vec<(RequestEnv, PolicyCheck)> {
+        self.apply_typecheck_fn_by_request_env(t, move |request, expr| {
             let mut type_errors = Vec::new();
             let ty =
                 self.typecheck_strict(request, expr, Type::primitive_boolean(), &mut type_errors);
@@ -365,9 +372,9 @@ impl<'a> Typechecker<'a> {
 
     /// Utility abstracting the common logic for strict and regular typechecking
     /// by request environment.
-    fn apply_typecheck_fn_by_request_env<F, C>(
-        &self,
-        t: &Template,
+    fn apply_typecheck_fn_by_request_env<'b, F, C>(
+        &'b self,
+        t: &'b Template,
         typecheck_fn: F,
     ) -> Vec<(RequestEnv, C)>
     where
@@ -380,7 +387,10 @@ impl<'a> Typechecker<'a> {
         // explicit that `expect_type` will be called for every element of
         // request_env without short circuiting.
         let policy_condition = &t.condition();
-        for requeste in self.all_envs() {
+        for requeste in self
+            .unlinked_request_envs()
+            .flat_map(|env| self.link_request_env(env, t))
+        {
             let check = typecheck_fn(&requeste, policy_condition);
             result_checks.push((requeste, check))
         }
@@ -400,32 +410,38 @@ impl<'a> Typechecker<'a> {
         policy_templates: &[&Template],
     ) -> Vec<(RequestEnv, Vec<PolicyCheck>)> {
         let mut env_checks = Vec::new();
-        for request in self.all_envs() {
+        for request in self.unlinked_request_envs() {
             let mut policy_checks = Vec::new();
             for t in policy_templates.iter() {
-                let mut type_errors = Vec::new();
-                let policy_condition = &t.condition();
-                let ty = self.typecheck_strict(
-                    &request,
-                    policy_condition,
-                    Type::primitive_boolean(),
-                    &mut type_errors,
-                );
+                for linked_env in self.link_request_env(request.clone(), t) {
+                    let mut type_errors = Vec::new();
+                    let policy_condition = &t.condition();
+                    let ty = self.typecheck_strict(
+                        &linked_env,
+                        policy_condition,
+                        Type::primitive_boolean(),
+                        &mut type_errors,
+                    );
 
-                // Again, look for the literal `false` instead of the type
-                // false.
-                match ty.typed_expr() {
-                    Some(typed_expr) => {
-                        let is_false = typed_expr.eq_shape(&Expr::val(false));
-                        match (is_false, ty.typechecked()) {
-                            (false, false) => policy_checks.push(PolicyCheck::Fail(type_errors)),
-                            (false, true) => {
-                                policy_checks.push(PolicyCheck::Success(typed_expr.clone()));
+                    // Again, look for the literal `false` instead of the type
+                    // false.
+                    match ty.typed_expr() {
+                        Some(typed_expr) => {
+                            let is_false = typed_expr.eq_shape(&Expr::val(false));
+                            match (is_false, ty.typechecked()) {
+                                (false, false) => {
+                                    policy_checks.push(PolicyCheck::Fail(type_errors))
+                                }
+                                (false, true) => {
+                                    policy_checks.push(PolicyCheck::Success(typed_expr.clone()));
+                                }
+                                (true, _) => {
+                                    policy_checks.push(PolicyCheck::Irrelevant(type_errors))
+                                }
                             }
-                            (true, _) => policy_checks.push(PolicyCheck::Irrelevant(type_errors)),
                         }
+                        None => policy_checks.push(PolicyCheck::Fail(type_errors)),
                     }
-                    None => policy_checks.push(PolicyCheck::Fail(type_errors)),
                 }
             }
             env_checks.push((request, policy_checks));
@@ -433,7 +449,7 @@ impl<'a> Typechecker<'a> {
         env_checks
     }
 
-    fn all_envs(&self) -> impl Iterator<Item = RequestEnv> {
+    fn unlinked_request_envs(&self) -> impl Iterator<Item = RequestEnv> + '_ {
         // Gather all of the actions declared in the schema.
         let all_actions = self
             .schema
@@ -456,6 +472,8 @@ impl<'a> Typechecker<'a> {
                                 action: &action.name,
                                 resource,
                                 context: &action.context,
+                                principal_slot: None,
+                                resource_slot: None,
                             })
                     })
             })
@@ -468,6 +486,91 @@ impl<'a> Typechecker<'a> {
             } else {
                 None
             })
+    }
+
+    /// Given a request environment and a template, return new environments
+    /// formed by instantiating template slots with possible entity types.
+    fn link_request_env<'b>(
+        &'b self,
+        env: RequestEnv<'b>,
+        t: &'b Template,
+    ) -> Box<dyn Iterator<Item = RequestEnv> + 'b> {
+        match env {
+            RequestEnv::Unknown => Box::new(std::iter::once(RequestEnv::Unknown)),
+            RequestEnv::Known {
+                principal,
+                action,
+                resource,
+                context,
+                ..
+            } => Box::new(
+                self.possible_slot_instantiations(
+                    t,
+                    SlotId::principal(),
+                    principal,
+                    t.principal_constraint().as_inner(),
+                )
+                .flat_map(move |p_slot| {
+                    self.possible_slot_instantiations(
+                        t,
+                        SlotId::resource(),
+                        resource,
+                        t.resource_constraint().as_inner(),
+                    )
+                    .map(move |r_slot| RequestEnv::Known {
+                        principal,
+                        action,
+                        resource,
+                        context,
+                        principal_slot: p_slot.clone(),
+                        resource_slot: r_slot.clone(),
+                    })
+                }),
+            ),
+        }
+    }
+
+    /// Get the entity types which could instantiate the slot given in this
+    /// template based on the policy scope constraints. We use this function to
+    /// avoid typechecking with slot bindings that will always be false based
+    /// only on the scope constraints.
+    fn possible_slot_instantiations(
+        &self,
+        t: &Template,
+        slot_id: SlotId,
+        var: &'a EntityType,
+        constraint: &PrincipalOrResourceConstraint,
+    ) -> Box<dyn Iterator<Item = Option<EntityType>> + 'a> {
+        if t.slots().contains(&slot_id) {
+            let all_entity_types = self.schema.entity_types();
+            match constraint {
+                // The condition is `var = ?slot`, so the policy can only apply
+                // if the slot has the same entity type as `var`.
+                PrincipalOrResourceConstraint::Eq(_) => {
+                    Box::new(std::iter::once(Some(var.clone())))
+                }
+                // The condition is `var in ?slot`, so the policy can only apply
+                // if the var is some descendant of the slot.
+                PrincipalOrResourceConstraint::In(_) => Box::new(
+                    all_entity_types
+                        .filter(|(_, ety)| ety.has_descendant_entity_type(var))
+                        .map(|(name, _)| Some(EntityType::Concrete(name.clone())))
+                        .chain(std::iter::once(Some(var.clone()))),
+                ),
+                // The template uses the slot, but without a scope constraint.
+                // This can't happen for the moment because slots may only
+                // appear in head constraints, but if we ever see this, then the
+                // only correct way to proceed is by returning all entity types
+                // as possible instantiations.
+                PrincipalOrResourceConstraint::Any => Box::new(
+                    all_entity_types.map(|(name, _)| Some(EntityType::Concrete(name.clone()))),
+                ),
+            }
+        } else {
+            // If the template does not contain this slot, then we don't need to
+            // consider its instantiations..
+            Box::new(std::iter::once(None))
+        }
     }
 
     fn typecheck_strict<'b>(
@@ -815,7 +918,9 @@ impl<'a> Typechecker<'a> {
         type_errors: &mut Vec<TypeError>,
     ) -> TypecheckAnswer<'b> {
         let ExprKind::BinaryApp { op, arg1, arg2 } = bin_expr.expr_kind() else {
-            panic!("`strict_transform_binary` called with an expression kind other than `BinaryApp`");
+            panic!(
+                "`strict_transform_binary` called with an expression kind other than `BinaryApp`"
+            );
         };
 
         // Binary operators `==`, `contains`, `containsAll`, and `containsAny`
@@ -1086,9 +1191,23 @@ impl<'a> Typechecker<'a> {
             ),
             // Template Slots, always has to be an entity.
             ExprKind::Slot(slotid) => TypecheckAnswer::success(
-                ExprBuilder::with_data(Some(Type::any_entity_reference()))
-                    .with_same_source_info(e)
-                    .slot(*slotid),
+                ExprBuilder::with_data(Some(if slotid.is_principal() {
+                    request_env
+                        .principal_slot()
+                        .clone()
+                        .map(Type::possibly_unspecified_entity_reference)
+                        .unwrap_or(Type::any_entity_reference())
+                } else if slotid.is_resource() {
+                    request_env
+                        .resource_slot()
+                        .clone()
+                        .map(Type::possibly_unspecified_entity_reference)
+                        .unwrap_or(Type::any_entity_reference())
+                } else {
+                    Type::any_entity_reference()
+                }))
+                .with_same_source_info(e)
+                .slot(*slotid),
             ),
 
             // Literal booleans get singleton type according to their value.

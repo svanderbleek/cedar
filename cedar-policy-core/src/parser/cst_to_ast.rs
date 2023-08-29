@@ -158,14 +158,31 @@ impl ASTNode<Option<cst::Policy>> {
         id: ast::PolicyID,
         errs: &mut ParseErrors,
     ) -> Option<ast::StaticPolicy> {
-        let tp = self.to_policy_template(id, errs)?;
-        match ast::StaticPolicy::try_from(tp) {
-            Ok(p) => Some(p),
-            Err(_) => {
-                errs.push(err::ParseError::ToAST(ToASTError::SlotsInConditionClause));
-                None
-            }
+        let tp = self.to_policy_template(id, errs);
+        // If we found any errors relating to slots, also add the unexpected template error
+        // we delay short-circuiting the option in order to prevent adding the same error twice
+
+        let policy = tp.map(ast::StaticPolicy::try_from);
+        // Check if our above values actually contains a Static Policy
+        // The possible states are as follows:
+        // None -> The source failed to parse completely
+        // Some(Err(_)) -> The source parsed as a template, but not a static policy
+        // Some(Ok(p)) -> We have a policy
+        // We want to add `[ToASTError::UnexpectedTemplate]` in two cases:
+        //  1) The obvious: if we parsed a template not a StaticPolicy
+        //  2) Even if we fail to parse anything, if our parse errors include anything about slots,
+        //     we also throw in this error. Ideally we'd do this if the partially parsed AST included
+        //     any template slots at all, but we don't have an easy mechanism for that currently
+        let is_template = policy.as_ref().map(|r| r.is_err()).unwrap_or(false);
+
+        let found_slot_error =
+            errs.contains(&ParseError::ToAST(ToASTError::SlotsInConditionClause));
+
+        if found_slot_error || is_template {
+            errs.push(err::ParseError::ToAST(ToASTError::UnexpectedTemplate));
         }
+
+        policy?.ok()
     }
 
     /// Convert `cst::Policy` to `ast::Template`. Works for inline policies as
@@ -2792,7 +2809,7 @@ mod tests {
         .expect("failed convert");
         match expr.expr_kind() {
             ast::ExprKind::Like { pattern, .. } => {
-                assert_eq!(pattern.to_string(), r#"string\\with\\backslashes"#);
+                assert_eq!(pattern.to_string(), r"string\\with\\backslashes");
             }
             _ => panic!("should be a like expr"),
         }
@@ -2807,7 +2824,7 @@ mod tests {
         .expect("failed convert");
         match expr.expr_kind() {
             ast::ExprKind::Like { pattern, .. } => {
-                assert_eq!(pattern.to_string(), r#"string\*with\*backslashes"#);
+                assert_eq!(pattern.to_string(), r"string\*with\*backslashes");
             }
             _ => panic!("should be a like expr"),
         }
@@ -2852,7 +2869,7 @@ mod tests {
             ast::ExprKind::Like { pattern, .. } => {
                 assert_eq!(
                     pattern.to_string(),
-                    r#"string\\\*with\\\*backslashes\\\*and\\\*stars"#
+                    r"string\\\*with\\\*backslashes\\\*and\\\*stars"
                 );
             }
             _ => panic!("should be a like expr"),
@@ -3260,7 +3277,7 @@ mod tests {
         // invalid escape `\p`
         test_invalid("\\\\aa\\p", 1);
         // invalid escape `\a` and empty unicode escape
-        test_invalid(r#"\aaa\u{}"#, 2);
+        test_invalid(r"\aaa\u{}", 2);
     }
 
     fn expect_action_error(test: &str, euid_strs: Vec<&str>) {

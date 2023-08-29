@@ -113,16 +113,12 @@ impl Authorizer {
                 match self.error_handling {
                     ErrorHandling::Deny => Response::new(
                         Decision::Deny,
-                        idset
-                            .chain(partial.diagnostics.reason.into_iter())
-                            .collect(),
+                        idset.chain(partial.diagnostics.reason).collect(),
                         errors,
                     ),
                     ErrorHandling::Forbid => Response::new(
                         Decision::Deny,
-                        idset
-                            .chain(partial.diagnostics.reason.into_iter())
-                            .collect(),
+                        idset.chain(partial.diagnostics.reason).collect(),
                         errors,
                     ),
                     ErrorHandling::Skip => {
@@ -148,9 +144,7 @@ impl Authorizer {
                         } else {
                             Response::new(
                                 Decision::Deny,
-                                idset
-                                    .chain(partial.diagnostics.reason.into_iter())
-                                    .collect(),
+                                idset.chain(partial.diagnostics.reason).collect(),
                                 errors,
                             )
                         }
@@ -863,7 +857,7 @@ impl Response {
 }
 
 /// Decision returned from the `Authorizer`
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
 pub enum Decision {
     /// The `Authorizer` determined that the request should be allowed
     Allow,

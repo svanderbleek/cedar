@@ -33,7 +33,7 @@ use super::schema::{
 /// Contains the four variables bound in the type environment. These together
 /// represent the full type of (principal, action, resource, context)
 /// authorization request.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RequestEnv<'a> {
     Unknown,
     Known {
@@ -41,6 +41,9 @@ pub enum RequestEnv<'a> {
         action: &'a EntityUID,
         resource: &'a EntityType,
         context: &'a Attributes,
+
+        principal_slot: Option<EntityType>,
+        resource_slot: Option<EntityType>,
     },
 }
 
@@ -100,6 +103,20 @@ impl<'a> RequestEnv<'a> {
                 Type::record_with_attributes(context.clone(), OpenTag::ClosedAttributes)
             }
             None => Type::any_record(),
+        }
+    }
+
+    pub fn principal_slot(&self) -> &Option<EntityType> {
+        match self {
+            RequestEnv::Unknown => &None,
+            RequestEnv::Known { principal_slot, .. } => principal_slot,
+        }
+    }
+
+    pub fn resource_slot(&self) -> &Option<EntityType> {
+        match self {
+            RequestEnv::Unknown => &None,
+            RequestEnv::Known { resource_slot, .. } => resource_slot,
         }
     }
 }
@@ -385,8 +402,8 @@ impl Type {
         schema: &ValidatorSchema,
         tys: &[Type],
     ) -> Option<Type> {
-        tys.iter().fold(Some(Type::Never), |lub, next| {
-            lub.and_then(|lub| Type::least_upper_bound(schema, &lub, next))
+        tys.iter().try_fold(Type::Never, |lub, next| {
+            Type::least_upper_bound(schema, &lub, next)
         })
     }
 
