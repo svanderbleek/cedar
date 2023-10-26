@@ -1597,7 +1597,7 @@ impl ASTNode<Option<cst::Primary>> {
                 if slot.matches(var) {
                     Ok(T::create_slot(errs))
                 } else {
-                    Err(format!("?{slot}"))
+                    Err(format!("{slot}"))
                 }
             }
             cst::Primary::Literal(_) => Err("literal".to_string()),
